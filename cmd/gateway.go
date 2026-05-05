@@ -17,7 +17,7 @@ func main() {
 	r := gin.Default()
 
 	//go服务
-	r.GET("/api/video/:id", forwardToGo)
+	r.GET("/api/videos/:id", forwardToGo)
 	r.GET("/api/users/:id", forwardToGo)
 	r.GET("/api/users/:id/history", forwardToGo)
 	r.GET("/api/hot", forwardToGo)
@@ -26,8 +26,8 @@ func main() {
 	r.GET("/api/recommend", forwardToGo)
 	r.GET("/api/similar-users", forwardToGo)
 
-	log.Println("网关启动，监听 :8080")
-	r.Run(":8080")
+	log.Println("网关启动，监听 :8079")
+	r.Run(":8079")
 }
 
 func forwardToGo(c *gin.Context) {

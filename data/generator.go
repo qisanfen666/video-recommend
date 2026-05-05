@@ -38,7 +38,7 @@ type Behavior struct {
 }
 
 func GenerateVideos() {
-	const testCount = 500000
+	const testCount = 5000
 
 	os.MkdirAll("data/videos", 0755)
 
@@ -81,7 +81,7 @@ func GenerateVideos() {
 }
 
 func GenerateUsers() {
-	const testCount = 100000
+	const testCount = 1000
 
 	os.MkdirAll("data/users", 0755)
 
@@ -127,7 +127,7 @@ func GenerateUsers() {
 func GenerateBehaviors() {
 	os.MkdirAll("data/behaviors", 0755)
 
-	const testCount = 1000000
+	const testCount = 10000
 	const workerCount = 10
 
 	perWorker := testCount / workerCount

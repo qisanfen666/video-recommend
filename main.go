@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"time"
+	"video-recommend/data"
 	"video-recommend/index"
 	"video-recommend/internal"
 	"video-recommend/metrics"
@@ -17,10 +18,10 @@ func main() {
 	fmt.Println("[1] 程序启动:", time.Now().Format("15:04:05"))
 
 	//生成数据并加载
-	// data.GenerateVideos()
-	// data.GenerateUsers()
-	// data.LoadData()
-	// data.GenerateBehaviors()
+	data.GenerateVideos()
+	data.GenerateUsers()
+	data.LoadData()
+	data.GenerateBehaviors()
 
 	log.Println("正在加载数据...")
 
@@ -46,8 +47,8 @@ func main() {
 	r.GET("/debug/stats", getStatsHandler)
 	r.GET("/debug/recent", getRecentHandler)
 
-	r.POST("/api/recommend", recommendHandler)
-	r.POST("/api/similar-users", similarUsersHandler)
+	r.GET("/api/recommend", recommendHandler)
+	r.GET("/api/similar-users", similarUsersHandler)
 
 	r.Run(":8081")
 }
