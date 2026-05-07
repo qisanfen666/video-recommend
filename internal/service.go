@@ -34,29 +34,45 @@ func (h *MinHeap) Pop() interface{} {
 
 var (
 	hotHeap *MinHeap
-	hotMap  map[int64]*Item
+	hotMap  map[int64]struct{} // 视频是否在 Top20 候选堆中（堆内元素按 VideoID 对齐）
 )
 
-func Init() {
-	fmt.Println("[i1] 程序启动:", time.Now().Format("15:04:05"))
+func findHeapIndexByVideoID(videoID int64) int {
+	for i, item := range *hotHeap {
+		if item.VideoID == videoID {
+			return i
+		}
+	}
+	return -1
+}
+
+// RebuildHotHeap 根据当前 VideoIndex 全量重建小顶堆（用于衰减后或与增量逻辑配合）
+func RebuildHotHeap() {
 	hotHeap = &MinHeap{}
 	heap.Init(hotHeap)
-	hotMap = make(map[int64]*Item, 500000)
-
+	hotMap = make(map[int64]struct{}, 500000)
 	for _, video := range VideoIndex {
 		update(video)
 	}
 }
 
+func Init() {
+	fmt.Println("[i1] 程序启动:", time.Now().Format("15:04:05"))
+	RebuildHotHeap()
+}
+
 func update(video Video) {
-	//已经在堆中，更新热度
-	if item, ok := hotMap[video.ID]; ok {
-		item.Heat = video.Heat
-		heap.Fix(hotHeap, findIndex(item))
+	if _, ok := hotMap[video.ID]; ok {
+		idx := findHeapIndexByVideoID(video.ID)
+		if idx >= 0 {
+			(*hotHeap)[idx].Heat = video.Heat
+			(*hotHeap)[idx].Title = video.Title
+			(*hotHeap)[idx].Category = video.Category
+			heap.Fix(hotHeap, idx)
+		}
 		return
 	}
 
-	//堆未满，直接加入
 	if hotHeap.Len() < 20 {
 		item := Item{
 			VideoID:  video.ID,
@@ -65,11 +81,10 @@ func update(video Video) {
 			Category: video.Category,
 		}
 		heap.Push(hotHeap, item)
-		hotMap[video.ID] = &item
+		hotMap[video.ID] = struct{}{}
 		return
 	}
 
-	// 超过第20名，直接替换
 	if video.Heat > (*hotHeap)[0].Heat {
 		old := heap.Pop(hotHeap).(Item)
 		delete(hotMap, old.VideoID)
@@ -81,17 +96,8 @@ func update(video Video) {
 			Category: video.Category,
 		}
 		heap.Push(hotHeap, item)
-		hotMap[video.ID] = &item
+		hotMap[video.ID] = struct{}{}
 	}
-}
-
-func findIndex(target *Item) int {
-	for i, item := range *hotHeap {
-		if item.VideoID == target.VideoID {
-			return i
-		}
-	}
-	return -1
 }
 
 func GetTop20() []Item {

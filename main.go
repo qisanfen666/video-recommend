@@ -8,6 +8,7 @@ import (
 	"video-recommend/data"
 	"video-recommend/index"
 	"video-recommend/internal"
+	"video-recommend/live"
 	"video-recommend/metrics"
 	"video-recommend/reco"
 
@@ -17,13 +18,18 @@ import (
 func main() {
 	fmt.Println("[1] 程序启动:", time.Now().Format("15:04:05"))
 
-	//生成数据并加载
-	data.GenerateVideos()
-	data.GenerateUsers()
-	data.LoadData()
-	data.GenerateBehaviors()
+	genReport, err := data.GenerateDataset(5000, 1000, 10000)
+	if err != nil {
+		panic(err)
+	}
+	log.Printf(
+		"数据生成完成: 总耗时 %d ms | 落盘约 %.2f MiB (videos %d / users %d / behaviors %d 条)",
+		genReport.TotalGenerationMs,
+		float64(genReport.DiskBytes.Total)/(1024*1024),
+		genReport.VideoCount, genReport.UserCount, genReport.BehaviorCount,
+	)
 
-	log.Println("正在加载数据...")
+	log.Println("正在加载数据到内存索引...")
 
 	if err := internal.LoadAll(); err != nil {
 		panic(err)
@@ -47,10 +53,74 @@ func main() {
 	r.GET("/debug/stats", getStatsHandler)
 	r.GET("/debug/recent", getRecentHandler)
 
-	r.GET("/api/recommend", recommendHandler)
-	r.GET("/api/similar-users", similarUsersHandler)
+	r.POST("/api/recommend", recommendHandler)
+	r.POST("/api/similar-users", similarUsersHandler)
+	r.POST("/api/admin/regenerate-data", regenerateDataHandler)
+	r.POST("/api/admin/simulate-behaviors", simulateBehaviorsHandler)
+
+	r.Static("/static", "./web")
+	r.GET("/", func(c *gin.Context) {
+		c.File("./web/index.html")
+	})
 
 	r.Run(":8081")
+}
+
+func regenerateDataHandler(c *gin.Context) {
+	var req struct {
+		VideoCount    int `json:"video_count"`
+		UserCount     int `json:"user_count"`
+		BehaviorCount int `json:"behavior_count"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	genReport, err := data.GenerateDataset(req.VideoCount, req.UserCount, req.BehaviorCount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var reload data.ReloadStat
+	t0 := time.Now()
+	if err := internal.LoadAll(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":      err.Error(),
+			"generation": genReport,
+		})
+		return
+	}
+	reload.LoadMs = time.Since(t0).Milliseconds()
+
+	t1 := time.Now()
+	index.BuildAll()
+	reload.IndexMs = time.Since(t1).Milliseconds()
+
+	t2 := time.Now()
+	internal.Init()
+	reload.InitMs = time.Since(t2).Milliseconds()
+	reload.TotalMs = reload.LoadMs + reload.IndexMs + reload.InitMs
+
+	c.JSON(http.StatusOK, gin.H{
+		"generation": genReport,
+		"reload":     reload,
+	})
+}
+
+func simulateBehaviorsHandler(c *gin.Context) {
+	var req live.SimulateRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	rep, err := live.SimulateLiveBehaviors(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rep)
 }
 
 func getVideoHandler(c *gin.Context) {

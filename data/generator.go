@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 	"video-recommend/data/categories"
 )
 
@@ -32,17 +33,18 @@ type User struct {
 type Behavior struct {
 	UserID    int64  `json:"user_id"`
 	VideoID   int64  `json:"video_id"`
-	Action    string `json:"action"` // click/like/share/complete
+	Action    string `json:"action"` // click, watch, kanwan, like, share (与 index 一致)
 	WatchTime int    `json:"watch_time"`
 	TimeStamp int64  `json:"timestamp"`
 }
 
-func GenerateVideos() {
-	const testCount = 5000
+func generateVideosWrite(testCount int) (PhaseStat, time.Duration, error) {
+	start := time.Now()
+	if err := os.MkdirAll("data/videos", 0755); err != nil {
+		return PhaseStat{}, 0, err
+	}
 
-	os.MkdirAll("data/videos", 0755)
-
-	const workerCount = 10
+	workerCount := VideoDataShards
 	taskChan := make(chan int, testCount)
 
 	go func() {
@@ -52,41 +54,64 @@ func GenerateVideos() {
 		close(taskChan)
 	}()
 
-	fmt.Println("正在生成", testCount, "条测试数据...")
+	fmt.Println("正在生成", testCount, "条视频数据...")
 
 	var wg sync.WaitGroup
+	var firstErr error
+	var errMu sync.Mutex
 	for w := 0; w < workerCount; w++ {
 		wg.Add(1)
 		go func(workID int) {
 			defer wg.Done()
-
 			outputFile := fmt.Sprintf("data/videos/testData%d.jsonl", workID)
 			file, err := os.Create(outputFile)
 			if err != nil {
-				panic(err)
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				errMu.Unlock()
+				return
 			}
 			defer file.Close()
 			encoder := json.NewEncoder(file)
-
 			for id := range taskChan {
 				video := generateDateVideos(id)
-				encoder.Encode(video)
+				if err := encoder.Encode(video); err != nil {
+					errMu.Lock()
+					if firstErr == nil {
+						firstErr = err
+					}
+					errMu.Unlock()
+					return
+				}
 			}
 		}(w)
 	}
 
 	wg.Wait()
-
-	fmt.Println("测试数据生成完成！")
+	d := time.Since(start)
+	if firstErr != nil {
+		return PhaseStat{}, d, firstErr
+	}
+	fmt.Println("视频数据生成完成！")
+	st := PhaseStat{
+		Name:        "generate_videos",
+		Label:       "并发生成视频 JSONL（channel 分任务 + 固定分片文件）",
+		Count:       int64(testCount),
+		DurationMs:  d.Milliseconds(),
+		ItemsPerSec: throughput(int64(testCount), d),
+	}
+	return st, d, nil
 }
 
-func GenerateUsers() {
-	const testCount = 1000
+func generateUsersWrite(testCount int) (PhaseStat, time.Duration, error) {
+	start := time.Now()
+	if err := os.MkdirAll("data/users", 0755); err != nil {
+		return PhaseStat{}, 0, err
+	}
 
-	os.MkdirAll("data/users", 0755)
-
-	const workerCount = 5
-
+	workerCount := UserDataShards
 	taskChan := make(chan int, testCount)
 
 	go func() {
@@ -96,68 +121,120 @@ func GenerateUsers() {
 		close(taskChan)
 	}()
 
-	fmt.Println("正在生成", testCount, "条用户测试数据...")
+	fmt.Println("正在生成", testCount, "条用户数据...")
 
 	var wg sync.WaitGroup
+	var firstErr error
+	var errMu sync.Mutex
 	for w := 0; w < workerCount; w++ {
 		wg.Add(1)
 		go func(workID int) {
 			defer wg.Done()
-
 			outputFile := fmt.Sprintf("data/users/testData%d.jsonl", workID)
 			file, err := os.Create(outputFile)
 			if err != nil {
-				panic(err)
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				errMu.Unlock()
+				return
 			}
 			defer file.Close()
 			encoder := json.NewEncoder(file)
-
 			for id := range taskChan {
 				user := generateDateUsers(id)
-				encoder.Encode(user)
+				if err := encoder.Encode(user); err != nil {
+					errMu.Lock()
+					if firstErr == nil {
+						firstErr = err
+					}
+					errMu.Unlock()
+					return
+				}
 			}
 		}(w)
 	}
 
 	wg.Wait()
-
-	fmt.Println("用户测试数据生成完成！")
+	d := time.Since(start)
+	if firstErr != nil {
+		return PhaseStat{}, d, firstErr
+	}
+	fmt.Println("用户数据生成完成！")
+	st := PhaseStat{
+		Name:        "generate_users",
+		Label:       "并发生成用户 JSONL",
+		Count:       int64(testCount),
+		DurationMs:  d.Milliseconds(),
+		ItemsPerSec: throughput(int64(testCount), d),
+	}
+	return st, d, nil
 }
 
-func GenerateBehaviors() {
-	os.MkdirAll("data/behaviors", 0755)
+func generateBehaviorsWrite(testCount int) (PhaseStat, time.Duration, error) {
+	start := time.Now()
+	if err := os.MkdirAll("data/behaviors", 0755); err != nil {
+		return PhaseStat{}, 0, err
+	}
 
-	const testCount = 10000
-	const workerCount = 10
+	workerCount := BehaviorDataShards
+	base := testCount / workerCount
+	rem := testCount % workerCount
 
-	perWorker := testCount / workerCount
-
-	fmt.Println("正在生成", testCount, "条用户行为测试数据...")
+	fmt.Println("正在生成", testCount, "条行为数据...")
 
 	var wg sync.WaitGroup
+	var firstErr error
+	var errMu sync.Mutex
 	for w := 0; w < workerCount; w++ {
+		n := base
+		if w < rem {
+			n++
+		}
 		wg.Add(1)
-		go func(workID int) {
+		go func(workID, lines int) {
 			defer wg.Done()
-
 			outputFile := fmt.Sprintf("data/behaviors/testData%d.jsonl", workID)
 			file, err := os.Create(outputFile)
 			if err != nil {
-				panic(err)
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				errMu.Unlock()
+				return
 			}
 			defer file.Close()
 			encoder := json.NewEncoder(file)
-
-			for i := 0; i < perWorker; i++ {
+			for i := 0; i < lines; i++ {
 				behavior := generateOneBehavior()
-				encoder.Encode(behavior)
+				if err := encoder.Encode(behavior); err != nil {
+					errMu.Lock()
+					if firstErr == nil {
+						firstErr = err
+					}
+					errMu.Unlock()
+					return
+				}
 			}
-		}(w)
+		}(w, n)
 	}
 
 	wg.Wait()
-
-	fmt.Println("用户行为测试数据生成完成！")
+	d := time.Since(start)
+	if firstErr != nil {
+		return PhaseStat{}, d, firstErr
+	}
+	fmt.Println("行为数据生成完成！")
+	st := PhaseStat{
+		Name:        "generate_behaviors",
+		Label:       "并发生成行为 JSONL（条数均分到各分片，余数由前几个 worker 吸收）",
+		Count:       int64(testCount),
+		DurationMs:  d.Milliseconds(),
+		ItemsPerSec: throughput(int64(testCount), d),
+	}
+	return st, d, nil
 }
 
 func generateDateVideos(id int) Video {
@@ -311,18 +388,21 @@ func selectVideo(user User) Video {
 func behaviorFunnel(video Video) (string, int) {
 	chance := rand.Float64()
 	if chance < 0.4 {
-		return "点击", 0
+		return "click", 0
 	}
 
 	watchTime := rand.Intn(video.Duration)
-	action := "观看"
+	if video.Duration == 0 {
+		return "click", 0
+	}
+	action := "watch"
 
 	if video.Duration-watchTime < 10 {
-		action = "看完"
+		action = "kanwan"
 	} else if chance < 0.7 {
-		action = "点赞"
+		action = "like"
 	} else if chance < 0.8 {
-		action = "转发"
+		action = "share"
 	}
 
 	return action, watchTime
@@ -344,7 +424,7 @@ func LoadData() {
 
 func loadVideos() {
 	videos = make([]Video, 0, 500000)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < VideoDataShards; i++ {
 		fileName := fmt.Sprintf("data/videos/testData%d.jsonl", i)
 		file, err := os.Open(fileName)
 		if err != nil {
@@ -364,7 +444,7 @@ func loadVideos() {
 
 func loadUsers() {
 	users = make([]User, 0, 100000)
-	for i := 0; i < 5; i++ {
+	for i := 0; i < UserDataShards; i++ {
 		fileName := fmt.Sprintf("data/users/testData%d.jsonl", i)
 		file, err := os.Open(fileName)
 		if err != nil {

@@ -35,6 +35,15 @@ var (
 	aggMutex sync.RWMutex
 )
 
+// routeKey 用于统计聚合：同一 Gin 路由模板下的不同实参（如 /api/videos/1 与 /api/videos/2）
+// 会合并为同一条键，例如 /api/videos/:id。未匹配到路由时退回原始 URL 路径。
+func routeKey(c *gin.Context) string {
+	if p := c.FullPath(); p != "" {
+		return p
+	}
+	return c.Request.URL.Path
+}
+
 func Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -43,7 +52,7 @@ func Middleware() gin.HandlerFunc {
 
 		duration := time.Since(start)
 		record := Record{
-			Path:       c.Request.URL.Path,
+			Path:       routeKey(c),
 			Method:     c.Request.Method,
 			Duration:   duration,
 			StatusCode: c.Writer.Status(),

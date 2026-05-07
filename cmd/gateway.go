@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"log"
 	"net/http"
@@ -22,9 +23,8 @@ func main() {
 	r.GET("/api/users/:id/history", forwardToGo)
 	r.GET("/api/hot", forwardToGo)
 
-	//java服务
-	r.GET("/api/recommend", forwardToGo)
-	r.GET("/api/similar-users", forwardToGo)
+	r.POST("/api/recommend", forwardToGo)
+	r.POST("/api/similar-users", forwardToGo)
 
 	log.Println("网关启动，监听 :8079")
 	r.Run(":8079")
@@ -33,16 +33,32 @@ func main() {
 func forwardToGo(c *gin.Context) {
 	url := "http://localhost:" + GoServerPort + c.Request.URL.Path
 
-	resp, err := http.Get(url)
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无法读取请求体"})
+		return
+	}
+
+	req, err := http.NewRequest(c.Request.Method, url, bytes.NewReader(body))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "构造转发请求失败"})
+		return
+	}
+	if ct := c.GetHeader("Content-Type"); ct != "" {
+		req.Header.Set("Content-Type", ct)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error": "网络错误",
 		})
+		return
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	respBody, _ := io.ReadAll(resp.Body)
+	c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), respBody)
 }
 
 // func forwardToJava(c *gin.Context) {

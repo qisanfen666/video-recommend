@@ -72,15 +72,20 @@ func RecommendForUser(userID int64, k int) []Recommend {
 
 func getHotRecommendations(k int) []Recommend {
 	hotVideos := internal.GetTop20()
-
-	result := make([]Recommend, 0, k)
-	for i := k - 1; i >= 0; i-- {
+	n := len(hotVideos)
+	if k > n {
+		k = n
+	}
+	if k <= 0 {
+		return nil
+	}
+	result := make([]Recommend, k)
+	for i := 0; i < k; i++ {
 		result[i] = Recommend{
 			VideoID: hotVideos[i].VideoID,
 			Score:   hotVideos[i].Heat,
 			Reason:  "reason2",
 		}
 	}
-
 	return result
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"video-recommend/data"
 )
 
 var (
@@ -14,6 +15,10 @@ var (
 )
 
 func LoadAll() error {
+	VideoIndex = make(map[int64]Video)
+	UserIndex = make(map[int64]User)
+	BehaviorIndex = make(map[int64][]Behavior)
+
 	if err := loadVideos(); err != nil {
 		return fmt.Errorf("加载视频数据失败: %w", err)
 	}
@@ -30,7 +35,7 @@ func LoadAll() error {
 }
 
 func loadVideos() error {
-	for i := 0; i < 10; i++ {
+	for i := 0; i < data.VideoDataShards; i++ {
 		fileName := fmt.Sprintf("data/videos/testData%d.jsonl", i)
 		file, err := os.Open(fileName)
 		if err != nil {
@@ -55,7 +60,7 @@ func loadVideos() error {
 }
 
 func loadUsers() error {
-	for i := 0; i < 5; i++ {
+	for i := 0; i < data.UserDataShards; i++ {
 		fileName := fmt.Sprintf("data/users/testData%d.jsonl", i)
 		file, err := os.Open(fileName)
 		if err != nil {
@@ -80,7 +85,7 @@ func loadUsers() error {
 }
 
 func loadBehaviors() error {
-	for i := 0; i < 10; i++ {
+	for i := 0; i < data.BehaviorDataShards; i++ {
 		fileName := fmt.Sprintf("data/behaviors/testData%d.jsonl", i)
 		file, err := os.Open(fileName)
 		if err != nil {

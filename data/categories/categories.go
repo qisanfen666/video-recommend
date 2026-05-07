@@ -166,5 +166,5 @@ var Nouns = []string{
 }
 
 var Actions = []string{
-	"点击", "观看", "点赞", "转发", "看完",
+	"click", "watch", "like", "share", "kanwan",
 }
